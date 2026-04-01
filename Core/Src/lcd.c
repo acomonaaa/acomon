@@ -32,7 +32,7 @@ static uint16_t LCD_ReadID(void)
     return id;
 }
 
-static void LCD_SetWindow(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2)
+void LCD_SetWindow(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2)
 {
     LCD_WriteCmd(0x2A);
     LCD_WriteData(x1 >> 8); LCD_WriteData(x1 & 0xFF);
@@ -155,6 +155,7 @@ void LCD_DisplayOn(void)  { LCD_WriteCmd(0x29); }
 void LCD_DisplayOff(void) { LCD_WriteCmd(0x28); }
 void LCD_BacklightOn(void)  { HAL_GPIO_WritePin(GPIOB, GPIO_PIN_15, GPIO_PIN_SET); }
 void LCD_BacklightOff(void) { HAL_GPIO_WritePin(GPIOB, GPIO_PIN_15, GPIO_PIN_RESET); }
+void LCD_BacklightToggle(void) { HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_15); }
 
 uint16_t LCD_GetWidth(void)  { return lcd_width; }
 uint16_t LCD_GetHeight(void) { return lcd_height; }

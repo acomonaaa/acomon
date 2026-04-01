@@ -16,14 +16,17 @@
   ******************************************************************************
   */
 /* USER CODE END Header */
+
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "cmsis_os.h"
 #include "gpio.h"
 #include "fsmc.h"
+#include "lcd.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "lcd.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -49,6 +52,7 @@
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
+void MX_FREERTOS_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -90,29 +94,25 @@ int main(void)
   MX_FSMC_Init();
   /* USER CODE BEGIN 2 */
 
-  /* 1. 拉低NE4片选（如果CubeMX没有自动配置）*/
+  /* 初始化 LCD */
   HAL_GPIO_WritePin(GPIOG, GPIO_PIN_12, GPIO_PIN_RESET);
-
-  /* 2. 初始化LCD */
   if (LCD_Init() != 0)
   {
-    /* LCD芯片ID未识别，检查连线 */
     Error_Handler();
   }
 
-  /* 3. 测试画面 */
-  LCD_Clear(COLOR_WHITE);
-  LCD_Fill(20, 20, 100, 100, COLOR_RED);
-  LCD_Fill(120, 20, 220, 100, COLOR_GREEN);
-  LCD_Fill(20, 120, 100, 200, COLOR_BLUE);
-  LCD_Fill(120, 120, 220, 200, COLOR_YELLOW);
-  LCD_DrawLine(0, 0, LCD_GetWidth()-1, LCD_GetHeight()-1, COLOR_BLACK);
-  LCD_DrawLine(LCD_GetWidth()-1, 0, 0, LCD_GetHeight()-1, COLOR_BLACK);
-  LCD_DrawCircle(120, 260, 40, COLOR_RED);
-  LCD_DrawRect(50, 240, 190, 310, COLOR_BLUE);
-
   /* USER CODE END 2 */
 
+  /* Init scheduler */
+  osKernelInitialize();  /* Call init function for freertos objects (in cmsis_os2.c) */
+
+  /* Call init function for freertos objects (in cmsis_os2.c) */
+  MX_FREERTOS_Init();
+
+  /* Start scheduler */
+  osKernelStart();
+
+  /* We should never get here as control is now taken by the scheduler */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
@@ -121,14 +121,8 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    /* 可以放一些动画或周期性任务 */
-    // HAL_Delay(500);
-    // LCD_BacklightOff();
-    // HAL_Delay(500);
-    // LCD_BacklightOn();
   }
   /* USER CODE END 3 */
-
 }
 
 /**
@@ -181,32 +175,51 @@ void SystemClock_Config(void)
 /* USER CODE END 4 */
 
 /**
+  * @brief  Period elapsed callback in non blocking mode
+  * @note   This function is called  when TIM6 interrupt took place, inside
+  * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
+  * a global variable "uwTick" used as application time base.
+  * @param  htim : TIM handle
+  * @retval None
+  */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  /* USER CODE BEGIN Callback 0 */
+
+  /* USER CODE END Callback 0 */
+  if (htim->Instance == TIM6)
+  {
+    HAL_IncTick();
+  }
+  /* USER CODE BEGIN Callback 1 */
+
+  /* USER CODE END Callback 1 */
+}
+
+/**
   * @brief  This function is executed in case of error occurrence.
   * @retval None
   */
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
   while (1)
   {
   }
   /* USER CODE END Error_Handler_Debug */
 }
+
 #ifdef USE_FULL_ASSERT
 /**
   * @brief  Reports the name of the source file and the source line number
   *         where the assert_param error has occurred.
   * @param  file: pointer to the source file name
-  * @param  line: assert_param error line source number
+  * @param  line: assert_param line source number
   * @retval None
   */
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */
-  /* User can add his own implementation to report the file name and line number,
-     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
