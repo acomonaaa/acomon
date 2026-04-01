@@ -51,7 +51,7 @@ file(GLOB_RECURSE LVGL_SRC "lvgl/src/*.c")
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
     ${LVGL_SRC}
-    Core/Src/lv_port_disp.c
+    lvgl/porting/lv_port_disp.c
 )
 
 # Add include paths
@@ -59,6 +59,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
     lvgl
     lvgl/src
+    lvgl/porting
 )
 
 # Add project symbols (macros)
