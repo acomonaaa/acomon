@@ -216,12 +216,14 @@ uint8_t LCD_Init(void)
     LCD_BacklightOff();
 
     lcd_id = LCD_ReadID();
-    if (lcd_id != 0x9341 && lcd_id != 0x8552) {
-        return 1;
+    if (lcd_id == 0x9341) {
+        LCD_RegInit_ILI9341();
+    } else if (lcd_id == 0x8552) {
+        LCD_RegInit_R61580V3();
+    } else {
+        /* ID 读取失败，默认尝试 ILI9341 初始化 */
+        LCD_RegInit_ILI9341();
     }
-
-    if (lcd_id == 0x9341)     LCD_RegInit_ILI9341();
-    else if (lcd_id == 0x8552) LCD_RegInit_R61580V3();
 
     LCD_SetDirection(0);
     LCD_Clear(COLOR_WHITE);

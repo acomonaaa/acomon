@@ -75,7 +75,8 @@ void MX_FSMC_Init(void)
   }
 
   /* USER CODE BEGIN FSMC_Init 2 */
-
+  /* 强制使能 FSMC Bank4 写操作（CubeMX 可能将其设为 DISABLE） */
+  FSMC_Bank1->BTCR[6] |= FSMC_BCR1_WREN;
   /* USER CODE END FSMC_Init 2 */
 }
 
