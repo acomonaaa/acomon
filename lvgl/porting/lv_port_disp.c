@@ -11,13 +11,14 @@
  *********************/
 #include "lv_port_disp.h"
 #include "lcd.h"
+#include "touch.h"
 #include <stdbool.h>
 
 /*********************
  *      DEFINES
  *********************/
-#define MY_DISP_HOR_RES    LCD_WIDTH
-#define MY_DISP_VER_RES    LCD_HEIGHT
+#define MY_DISP_HOR_RES    320
+#define MY_DISP_VER_RES    240
 
 #define BYTE_PER_PIXEL (LV_COLOR_FORMAT_GET_SIZE(LV_COLOR_FORMAT_RGB565)) /*will be 2 for RGB565 */
 
@@ -57,6 +58,10 @@ void lv_port_disp_init(void)
     lv_display_t * disp = lv_display_create(MY_DISP_HOR_RES, MY_DISP_VER_RES);
     lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
     lv_display_set_flush_cb(disp, disp_flush);
+    
+    /* [Fix12] 璁剧疆LVGL鏄剧ず鏃嬭浆妯″紡锛屼娇鍏朵笌LCD纭欢妯睆鍖归厤 */
+    /* 涓嶄娇鐢ㄨ蒋浠舵棆杞紝璁㎜CD纭欢鑷繁澶勭悊鏂瑰悜 */
+    lv_display_set_rotation(disp, LV_DISP_ROTATION_0);
 
     /* Two buffers for partial rendering */
     LV_ATTRIBUTE_MEM_ALIGN
@@ -73,7 +78,9 @@ void lv_port_disp_init(void)
 /*Initialize your display and the required peripherals.*/
 static void disp_init(void)
 {
-    /*LCD is already initialized in main.c before lv_port_disp_init()*/
+    /* [Fix14] 纭繚LCD鏂瑰悜璁剧疆姝ｇ‘锛岀劧鍚庢竻灞?*/
+    LCD_SetDirection(LCD_DIRECTION);
+    LCD_Clear(COLOR_BLACK);
 }
 
 volatile bool disp_flush_enabled = true;

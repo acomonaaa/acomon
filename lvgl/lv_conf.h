@@ -107,7 +107,7 @@
  * - LV_OS_MQX
  * - LV_OS_SDL2
  * - LV_OS_CUSTOM */
-#define LV_USE_OS   LV_OS_NONE
+#define LV_USE_OS   LV_OS_FREERTOS
 
 #if LV_USE_OS == LV_OS_CUSTOM
     #define LV_OS_CUSTOM_INCLUDE <stdint.h>
@@ -582,6 +582,13 @@
 /** For big endian systems set to 1 */
 #define LV_BIG_ENDIAN_SYSTEM 0
 
+/** Use a custom tick source for LVGL tick (e.g. FreeRTOS tick) */
+#define LV_TICK_CUSTOM 1
+#if LV_TICK_CUSTOM
+    #define LV_TICK_CUSTOM_INCLUDE "cmsis_os.h"
+    #define LV_TICK_CUSTOM_SYS_TIME_EXPR osKernelGetTickCount()
+#endif
+
 /** Define a custom attribute for `lv_tick_inc` function */
 #define LV_ATTRIBUTE_TICK_INC
 
@@ -740,6 +747,9 @@
  * WIDGETS
  *================*/
 /* Documentation for widgets can be found here: https://docs.lvgl.io/master/widgets/index.html . */
+
+/** 1: Enable input device module */
+#define LV_USE_INDEV 1
 
 /** 1: Causes these widgets to be given default values at creation time.
  *  - lv_buttonmatrix_t:  Get default maps:  {"Btn1", "Btn2", "Btn3", "\n", "Btn4", "Btn5", ""}, else map not set.

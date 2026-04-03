@@ -47,11 +47,27 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # LVGL 源文件（递归查找）
 file(GLOB_RECURSE LVGL_SRC "lvgl/src/*.c")
 
+# GUI Guider 源文件
+set(GUIGUIDER_SRC
+    ui/generated/gui_guider.c
+    ui/generated/events_init.c
+    ui/generated/widgets_init.c
+    ui/generated/setup_scr_screen.c
+    ui/custom/custom.c
+)
+
+# GUI Guider 字体文件
+file(GLOB GUIGUIDER_FONTS "ui/generated/guider_fonts/*.c")
+
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
     ${LVGL_SRC}
     lvgl/porting/lv_port_disp.c
+    Core/Src/touch.c
+    Core/Src/lv_port_indev.c
+    ${GUIGUIDER_SRC}
+    ${GUIGUIDER_FONTS}
 )
 
 # Add include paths
@@ -60,6 +76,9 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     lvgl
     lvgl/src
     lvgl/porting
+    Core/Inc
+    ui/generated
+    ui/custom
 )
 
 # Add project symbols (macros)

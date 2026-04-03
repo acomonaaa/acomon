@@ -24,7 +24,10 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "lvgl.h"
+#include "gui_guider.h"
+#include "events_init.h"
+#include "custom.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -45,7 +48,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+lv_ui guider_ui;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -91,7 +94,7 @@ int main(void)
   MX_GPIO_Init();
   MX_FSMC_Init();
   /* USER CODE BEGIN 2 */
-
+  /* LCD和LVGL初始化已移至FreeRTOS任务中执行 */
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -160,7 +163,7 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-
+/* lv_tick_inc 已不再需要，LVGL 现在通过 LV_TICK_CUSTOM 直接读取 osKernelGetTickCount() */
 /* USER CODE END 4 */
 
 /**
