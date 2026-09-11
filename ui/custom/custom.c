@@ -1211,14 +1211,24 @@ static void ui_update_data(void)
     snprintf(buf, sizeof(buf), "HUMIDITY\n%ld.%ld %%", (long)(humi_x10 / 10), (long)labs(humi_x10 % 10));
     lv_label_set_text(guider_ui.screen_label_humi, buf);
 
-    snprintf(buf, sizeof(buf), "TEMP\n%ld.%ld C", (long)(temp_x10 / 10), (long)labs(temp_x10 % 10));
-    lv_label_set_text(guider_ui.screen_label_temp, buf);
+    /* TEMP 行附带模式徽标；LIGHT 行附带云状态；CO2 行附带报警 —— 不碰 tab3 字段标题 label_2/3/4 */
+    {
+        static const char *cloud_sfx[] = {" [OFF]", " [...]", " [ON]", " [WAIT]"};
+        uint8_t cs = snapshot.cloud_state;
+        if (cs > 3) cs = 0;
+        snprintf(buf, sizeof(buf), "TEMP\n%ld.%ld C %s",
+                 (long)(temp_x10 / 10), (long)labs(temp_x10 % 10),
+                 snapshot.auto_mode ? "A" : "M");
+        lv_label_set_text(guider_ui.screen_label_temp, buf);
 
-    snprintf(buf, sizeof(buf), "LIGHT\n%lu lx", (unsigned long)snapshot.light);
-    lv_label_set_text(guider_ui.screen_label_light, buf);
+        snprintf(buf, sizeof(buf), "LIGHT\n%lu lx%s", (unsigned long)snapshot.light, cloud_sfx[cs]);
+        lv_label_set_text(guider_ui.screen_label_light, buf);
 
-    snprintf(buf, sizeof(buf), "CO2\n%ld.%ld ppm", (long)(co2_x10 / 10), (long)labs(co2_x10 % 10));
-    lv_label_set_text(guider_ui.screen_label_co2, buf);
+        snprintf(buf, sizeof(buf), "CO2\n%ld.%ld ppm%s",
+                 (long)(co2_x10 / 10), (long)labs(co2_x10 % 10),
+                 snapshot.alarm_active ? " !" : "");
+        lv_label_set_text(guider_ui.screen_label_co2, buf);
+    }
 
     if (guider_ui.screen_sw_fan) {
         bool checked = lv_obj_has_state(guider_ui.screen_sw_fan, LV_STATE_CHECKED);
@@ -1268,23 +1278,7 @@ static void ui_update_data(void)
         }
     }
 
-    /* 云状态 / 模式 / 报警 徽标（挂在 label_2/3/4，无则忽略） */
-    {
-        static const char *cloud_txt[] = {"CLOUD:OFF", "CLOUD:...", "CLOUD:ON", "CLOUD:WAIT"};
-        uint8_t cs = snapshot.cloud_state;
-        if (cs > 3) cs = 0;
-        if (guider_ui.screen_label_2) {
-            lv_label_set_text(guider_ui.screen_label_2, cloud_txt[cs]);
-        }
-        if (guider_ui.screen_label_3) {
-            lv_label_set_text(guider_ui.screen_label_3,
-                              snapshot.auto_mode ? "MODE:AUTO" : "MODE:MANUAL");
-        }
-        if (guider_ui.screen_label_4) {
-            lv_label_set_text(guider_ui.screen_label_4,
-                              snapshot.alarm_active ? "ALARM!" : "ALARM:OK");
-        }
-    }
+    /* 云/模式/报警状态已并入 TEMP/LIGHT/CO2 数据行；不覆写 tab3 的 label_2/3/4 字段标题 */
 }
 
 /* 导出给 guiTask 主循环直接调用的包装函数（非 static，可被外部链接） */

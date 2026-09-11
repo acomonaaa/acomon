@@ -33,10 +33,10 @@ static void apply_cloud_cmd(const cloud_cmd_t *cmd)
         SystemData_t s;
         SystemData_Snapshot(&s);
         SystemData_SetThresholds(
-            (cmd->thr_temp > 0.0f) ? cmd->thr_temp : s.thresh_temp,
-            (cmd->thr_humi > 0.0f) ? cmd->thr_humi : s.thresh_humi,
-            (cmd->thr_light > 0) ? cmd->thr_light : s.thresh_light,
-            (cmd->thr_co2 > 0.0f) ? cmd->thr_co2 : s.thresh_co2);
+            cmd->has_temp  ? cmd->thr_temp  : s.thresh_temp,
+            cmd->has_humi  ? cmd->thr_humi  : s.thresh_humi,
+            cmd->has_light ? cmd->thr_light : s.thresh_light,
+            cmd->has_co2   ? cmd->thr_co2   : s.thresh_co2);
     } else if (strcmp(cmd->cmd, "set_actuator") == 0 && cmd->has_act) {
         SystemData_t s;
         SystemData_Snapshot(&s);
@@ -141,9 +141,13 @@ void StartCloudTask(void *argument)
         handle_downlink();
         uplink_flow();
 
-        /* ACK 超时：视为失败，等待重连/重发（seq 仍保留，云端可重推） */
+        /* ACK 超时：记失败计数，等待重连/重发（seq 仍保留，云端可重推） */
         if (s_ack_waiting && (osKernelGetTickCount() - s_last_ack_ms) > APP_CMD_ACK_TIMEOUT_MS) {
             s_ack_waiting = 0;
+            if (osMutexAcquire(g_DataMutex, osWaitForever) == osOK) {
+                g_SysData.cmd_ack_timeout++;
+                osMutexRelease(g_DataMutex);
+            }
         }
 
         health_beat(APP_HB_CLOUD);

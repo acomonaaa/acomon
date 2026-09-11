@@ -49,7 +49,6 @@ static void sim_sample(float *t, float *h, float *c, uint32_t *lux)
 void StartSensorTask(void *argument)
 {
     (void)argument;
-    uint32_t tick_div = 0;
 
     for (;;) {
         float raw_t, raw_h, raw_c;
@@ -90,9 +89,7 @@ void StartSensorTask(void *argument)
             g_SysData.humi  = fh;
             g_SysData.co2   = fc;
             g_SysData.light = fl;
-            if ((tick_div % 10) == 0) {
-                g_SysData.uptime_s++;
-            }
+            g_SysData.uptime_s++; /* 任务周期 1s，直接累加 */
             osMutexRelease(g_DataMutex);
         }
 
@@ -105,7 +102,6 @@ void StartSensorTask(void *argument)
         hs.seq   = 0;
         history_ring_push(&hs);
 
-        tick_div++;
         health_beat(APP_HB_SENSOR);
         osDelay(APP_SENSOR_PERIOD_MS);
     }

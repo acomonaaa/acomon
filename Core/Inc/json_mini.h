@@ -29,6 +29,7 @@ typedef struct {
     /* set_threshold */
     float thr_temp, thr_humi, thr_co2;
     uint32_t thr_light;
+    uint8_t has_temp, has_humi, has_light, has_co2;
     /* set_actuator */
     uint8_t fan, pump;
     uint8_t light_pct;

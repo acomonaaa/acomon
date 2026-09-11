@@ -48,6 +48,7 @@ typedef struct {
     uint32_t uplink_fail;
     uint32_t cmd_recv;
     uint32_t cmd_dup_drop;
+    uint32_t cmd_ack_timeout;
 
     /* 7. 运行 */
     uint32_t uptime_s;

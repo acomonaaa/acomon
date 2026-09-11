@@ -2,8 +2,13 @@
  * @file at_sm.c
  * @brief L610 AT 状态机实现
  *
- * 应答（OK/ERROR）与 URC（+CMQTTPUBLISH 等）分流；
- * 失败指数退避；APP_CLOUD_SIM=1 时用仿真应答驱动全流程。
+ * 设计：
+ *  - 每次 at_sm_send_cmd(cmd, next_on_ok) 记录「OK 后应进入的状态」，
+ *    避免用命令字符串猜状态（上一轮 SIM 链路坍缩根因）。
+ *  - INIT 起始：SIM 与真机共用同一命令序列 AT → CPIN → CEREG → MQTT_CFG
+ *    → MQTT_CONN → MQTT_SUB → ONLINE。
+ *  - 指数退避仅在 ONLINE 成功后重置；BACKOFF 结束回 INIT 重连。
+ *  - 应答（OK/ERROR）与 URC（+CMQTTPUBLISH）分流。
  */
 #include "at_sm.h"
 #include "l610_uart.h"
@@ -15,17 +20,20 @@
 #include <stdlib.h>
 
 static at_state_t s_state = AT_ST_INIT;
+static at_state_t s_next_on_ok = AT_ST_ONLINE;
 static uint32_t s_state_enter_ms;
 static uint32_t s_backoff_ms = APP_BACKOFF_MIN_MS;
+#if !APP_CLOUD_SIM
 static char s_line[256];
 static uint32_t s_line_len;
-static char s_pending_cmd[128];
+#endif
+static char s_pending_cmd[160];
 static char s_pub_topic[128];
 static char s_pub_payload[192];
-static uint8_t s_pub_pending;
 
 static char s_urc_payload[256];
 static uint8_t s_urc_ready;
+static uint8_t s_publish_inflight; /* 真机 pub 等待 OK */
 
 static void set_cloud_ui(uint8_t st)
 {
@@ -46,22 +54,27 @@ static void enter(at_state_t st)
 
 void at_sm_init(void)
 {
-    s_state = AT_ST_INIT;
     s_backoff_ms = APP_BACKOFF_MIN_MS;
+#if !APP_CLOUD_SIM
     s_line_len = 0;
+#endif
     s_urc_ready = 0;
-    s_pub_pending = 0;
+    s_publish_inflight = 0;
+    s_pending_cmd[0] = '\0';
     enter(AT_ST_INIT);
 }
 
 void at_sm_send_cmd(const char *cmd)
 {
+    at_sm_send_cmd_next(cmd, AT_ST_ONLINE);
+}
+
+void at_sm_send_cmd_next(const char *cmd, at_state_t next_on_ok)
+{
     if (cmd == NULL) return;
+    s_next_on_ok = next_on_ok;
     snprintf(s_pending_cmd, sizeof(s_pending_cmd), "%s\r\n", cmd);
-#if APP_CLOUD_SIM
-    /* 仿真：不真正写 UART，由 poll 注入 OK */
-    (void)0;
-#else
+#if !APP_CLOUD_SIM
     l610_uart_write((const uint8_t *)s_pending_cmd, (uint32_t)strlen(s_pending_cmd));
 #endif
     enter(AT_ST_WAIT_OK);
@@ -69,6 +82,7 @@ void at_sm_send_cmd(const char *cmd)
 
 static void schedule_backoff(void)
 {
+    s_publish_inflight = 0;
     s_backoff_ms <<= 1;
     if (s_backoff_ms > APP_BACKOFF_MAX_MS) s_backoff_ms = APP_BACKOFF_MAX_MS;
     enter(AT_ST_BACKOFF);
@@ -76,10 +90,8 @@ static void schedule_backoff(void)
 
 static void handle_urc_line(const char *line)
 {
-    /* +CMQTTPUBLISH: <mid>,0,<topic_len>,<topic>,<payload_len>,<payload> */
     const char *p = strstr(line, "+CMQTTPUBLISH:");
     if (p == NULL) return;
-    /* 简化解析：从第一个 '{' 取 JSON 负载 */
     const char *brace = strchr(p, '{');
     if (brace) {
         size_t n = strlen(brace);
@@ -87,6 +99,21 @@ static void handle_urc_line(const char *line)
         memcpy(s_urc_payload, brace, n);
         s_urc_payload[n] = '\0';
         s_urc_ready = 1;
+    }
+}
+
+static void on_ok(void)
+{
+    if (s_publish_inflight) {
+        s_publish_inflight = 0;
+        if (osMutexAcquire(g_DataMutex, osWaitForever) == osOK) {
+            g_SysData.uplink_ok++;
+            osMutexRelease(g_DataMutex);
+        }
+    }
+    enter(s_next_on_ok);
+    if (s_state == AT_ST_ONLINE) {
+        s_backoff_ms = APP_BACKOFF_MIN_MS;
     }
 }
 
@@ -99,28 +126,7 @@ static void handle_line(const char *line)
         return;
     }
     if (strcmp(line, "OK") == 0) {
-        /* 按当前状态推进 */
-        switch (s_state) {
-        case AT_ST_WAIT_OK:
-            /* 根据上一条命令决定下一状态：用 pending 粗判 */
-            if (strstr(s_pending_cmd, "AT+CPIN?")) enter(AT_ST_CEREG);
-            else if (strstr(s_pending_cmd, "AT+CEREG")) enter(AT_ST_MQTT_CFG);
-            else if (strstr(s_pending_cmd, "AT+CMQTTSTART") || strstr(s_pending_cmd, "AT+CMQTTACCQ"))
-                enter(AT_ST_MQTT_CONN);
-            else if (strstr(s_pending_cmd, "AT+CMQTTCONNECT")) enter(AT_ST_MQTT_SUB);
-            else if (strstr(s_pending_cmd, "AT+CMQTTSUB")) enter(AT_ST_ONLINE);
-            else if (strstr(s_pending_cmd, "AT+CMQTTPUB")) {
-                if (osMutexAcquire(g_DataMutex, osWaitForever) == osOK) {
-                    g_SysData.uplink_ok++;
-                    osMutexRelease(g_DataMutex);
-                }
-                enter(AT_ST_ONLINE);
-            } else enter(AT_ST_ONLINE);
-            if (s_state == AT_ST_ONLINE) s_backoff_ms = APP_BACKOFF_MIN_MS;
-            break;
-        default:
-            break;
-        }
+        on_ok();
         return;
     }
     if (strncmp(line, "ERROR", 5) == 0 || strncmp(line, "+CME ERROR", 10) == 0) {
@@ -146,10 +152,42 @@ void at_sm_feed(void)
         } else if (s_line_len + 1 < sizeof(s_line)) {
             s_line[s_line_len++] = c;
         } else {
-            s_line_len = 0; /* 溢出丢弃 */
+            s_line_len = 0;
         }
     }
 #endif
+}
+
+/** 状态机「应当发出的下一条初始化/连接命令」；SIM 与真机共用 */
+static void kick_state_command(void)
+{
+    switch (s_state) {
+    case AT_ST_INIT:
+        at_sm_send_cmd_next("AT", AT_ST_CPIN);
+        break;
+    case AT_ST_CPIN:
+        at_sm_send_cmd_next("AT+CPIN?", AT_ST_CEREG);
+        break;
+    case AT_ST_CEREG:
+        at_sm_send_cmd_next("AT+CEREG?", AT_ST_MQTT_CFG);
+        break;
+    case AT_ST_MQTT_CFG:
+        at_sm_send_cmd_next("AT+CMQTTSTART", AT_ST_MQTT_CONN);
+        break;
+    case AT_ST_MQTT_CONN:
+        at_sm_send_cmd_next("AT+CMQTTCONNECT=0,1800", AT_ST_MQTT_SUB);
+        break;
+    case AT_ST_MQTT_SUB:
+        at_sm_send_cmd_next("AT+CMQTTSUB=0,1,\"" APP_CLOUD_TOPIC_CMD_SUB "\",1", AT_ST_ONLINE);
+        break;
+    case AT_ST_BACKOFF:
+        if ((osKernelGetTickCount() - s_state_enter_ms) > s_backoff_ms) {
+            enter(AT_ST_INIT);
+        }
+        break;
+    default:
+        break;
+    }
 }
 
 #if APP_CLOUD_SIM
@@ -158,7 +196,7 @@ static void sim_step(void)
     uint32_t now = osKernelGetTickCount();
     uint32_t elapsed = now - s_state_enter_ms;
 
-    /* 周期性模拟云端下行 force_report，便于演示去重/ACK（不抢本地模式） */
+    /* 周期模拟云端下行 force_report（不抢本地模式） */
     static uint32_t last_cmd_ms;
     if (s_state == AT_ST_ONLINE && (now - last_cmd_ms) > 15000) {
         last_cmd_ms = now;
@@ -168,60 +206,20 @@ static void sim_step(void)
         s_urc_ready = 1;
     }
 
-    switch (s_state) {
-    case AT_ST_INIT:
-        if (elapsed > 50) {
-            snprintf(s_pending_cmd, sizeof(s_pending_cmd), "AT");
-            enter(AT_ST_WAIT_OK);
-            /* 下一 poll 直接 OK 推进到 CPIN */
-        }
-        break;
-    case AT_ST_WAIT_OK:
+    /* INIT/CPIN/...：到点发命令；WAIT_OK：注入 OK */
+    if (s_state == AT_ST_WAIT_OK) {
         if (elapsed > 30) {
             handle_line("OK");
         }
-        break;
-    case AT_ST_CPIN:
-        if (elapsed > 50) {
-            snprintf(s_pending_cmd, sizeof(s_pending_cmd), "AT+CEREG?");
-            enter(AT_ST_WAIT_OK);
-        }
-        break;
-    case AT_ST_CEREG:
-        if (elapsed > 50) {
-            snprintf(s_pending_cmd, sizeof(s_pending_cmd), "AT+CMQTTSTART");
-            enter(AT_ST_WAIT_OK);
-        }
-        break;
-    case AT_ST_MQTT_CFG:
-        if (elapsed > 50) {
-            snprintf(s_pending_cmd, sizeof(s_pending_cmd), "AT+CMQTTCONNECT");
-            enter(AT_ST_WAIT_OK);
-        }
-        break;
-    case AT_ST_MQTT_CONN:
-        if (elapsed > 50) {
-            snprintf(s_pending_cmd, sizeof(s_pending_cmd), "AT+CMQTTSUB");
-            enter(AT_ST_WAIT_OK);
-        }
-        break;
-    case AT_ST_MQTT_SUB:
-        if (elapsed > 50) {
-            snprintf(s_pending_cmd, sizeof(s_pending_cmd), "AT");
-            enter(AT_ST_WAIT_OK);
-            /* handle_line(OK) 会把含 CMQTTSUB 的 pending 升到 ONLINE */
-        }
-        break;
-    case AT_ST_ONLINE:
-        break;
-    case AT_ST_BACKOFF:
-        /* 退避结束后重连；不在此重置退避间隔，仅 ONLINE 成功后重置 → 真正 1s→60s */
-        if (elapsed > s_backoff_ms) {
-            enter(AT_ST_INIT);
-        }
-        break;
-    default:
-        break;
+        return;
+    }
+    if (s_state == AT_ST_ONLINE || s_state == AT_ST_BACKOFF) {
+        kick_state_command();
+        return;
+    }
+    /* 初始化中间态：稍等再发，便于观察状态迁移 */
+    if (elapsed > 40) {
+        kick_state_command();
     }
 }
 #endif
@@ -231,11 +229,16 @@ void at_sm_poll(void)
     at_sm_feed();
 #if APP_CLOUD_SIM
     sim_step();
+#else
+    /* 真机：INIT 与中间态主动发起下一条命令；WAIT_OK 只等应答 */
+    if (s_state != AT_ST_WAIT_OK && s_state != AT_ST_ONLINE) {
+        kick_state_command();
+    }
 #endif
 
-    /* 超时：WAIT_OK 停留过久视为失败 */
     if (s_state == AT_ST_WAIT_OK) {
-        if ((osKernelGetTickCount() - s_state_enter_ms) > 2000) {
+        uint32_t to = s_publish_inflight ? 3000 : 2000;
+        if ((osKernelGetTickCount() - s_state_enter_ms) > to) {
             schedule_backoff();
         }
     }
@@ -277,11 +280,16 @@ int at_sm_publish(const char *topic, const char *payload)
     }
     return 1;
 #else
-    /* 真机路径：发送后由 OK 推进；此处按在线即尝试成功交由上层语义简化 */
-    char cmd[320];
-    int plen = (int)strlen(payload);
-    snprintf(cmd, sizeof(cmd), "AT+CMQTTPUB=0,0,%d,%s", plen, payload);
-    at_sm_send_cmd(cmd);
+    /* 真机：发送 pub 并等待 OK 后才算成功；不允许并发第二条 */
+    if (s_state != AT_ST_ONLINE || s_publish_inflight) return 0;
+    {
+        char cmd[384];
+        int plen = (int)strlen(payload);
+        snprintf(cmd, sizeof(cmd), "AT+CMQTTPUB=0,0,%d,%s", plen, payload);
+        s_publish_inflight = 1;
+        /* pub 成功后仍回 ONLINE，不走连接序列 */
+        at_sm_send_cmd_next(cmd, AT_ST_ONLINE);
+    }
     (void)s_pub_topic;
     (void)s_pub_payload;
     return 1;

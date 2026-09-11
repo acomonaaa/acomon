@@ -11,8 +11,9 @@
 
 /* 滞回输出锁存：避免在阈值附近抖动 */
 static uint8_t s_fan_on;
-static uint8_t s_pump_on;
 static uint8_t s_light_on;
+static uint8_t s_hum_on;
+static uint8_t s_co2_on;
 
 static uint8_t hyst_need_fan(float temp, float thr)
 {
@@ -78,6 +79,8 @@ void StartControlTask(void *argument)
             pump     = snap.pump_status;
             light_pct= snap.light_pwm;
             alarm    = snap.alarm_active;
+            /* 手动模式：mask 与 active 保持一致（bit0=手动报警） */
+            mask     = alarm ? 0x01 : 0;
         }
 
         actuator_set(ACT_FAN, fan);

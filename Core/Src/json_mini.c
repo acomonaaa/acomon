@@ -95,10 +95,10 @@ int json_parse_cmd(const char *json, cloud_cmd_t *out)
         }
     } else if (strcmp(out->cmd, "set_threshold") == 0) {
         double v;
-        if (json_get_num(json, "temp", &v)) { out->thr_temp = (float)v; out->has_thr = 1; }
-        if (json_get_num(json, "humi", &v)) { out->thr_humi = (float)v; out->has_thr = 1; }
-        if (json_get_num(json, "light", &v)) { out->thr_light = (uint32_t)v; out->has_thr = 1; }
-        if (json_get_num(json, "co2", &v)) { out->thr_co2 = (float)v; out->has_thr = 1; }
+        if (json_get_num(json, "temp", &v)) { out->thr_temp = (float)v; out->has_temp = 1; out->has_thr = 1; }
+        if (json_get_num(json, "humi", &v)) { out->thr_humi = (float)v; out->has_humi = 1; out->has_thr = 1; }
+        if (json_get_num(json, "light", &v)) { out->thr_light = (uint32_t)v; out->has_light = 1; out->has_thr = 1; }
+        if (json_get_num(json, "co2", &v)) { out->thr_co2 = (float)v; out->has_co2 = 1; out->has_thr = 1; }
     } else if (strcmp(out->cmd, "set_actuator") == 0) {
         double v;
         if (json_get_num(json, "fan", &v)) { out->fan = (uint8_t)(v != 0); out->has_act = 1; }
