@@ -3,7 +3,7 @@
  * @brief L610 AT 状态机实现
  *
  * 设计：
- *  - 每次 at_sm_send_cmd(cmd, next_on_ok) 记录「OK 后应进入的状态」，
+ *  - 每次 at_sm_send_cmd_next(cmd, next_on_ok) 记录「OK 后应进入的状态」，
  *    避免用命令字符串猜状态（上一轮 SIM 链路坍缩根因）。
  *  - INIT 起始：SIM 与真机共用同一命令序列 AT → CPIN → CEREG → MQTT_CFG
  *    → MQTT_CONN → MQTT_SUB → ONLINE。
@@ -60,11 +60,6 @@ void at_sm_init(void)
     s_publish_inflight = 0;
     s_pending_cmd[0] = '\0';
     enter(AT_ST_INIT);
-}
-
-void at_sm_send_cmd(const char *cmd)
-{
-    at_sm_send_cmd_next(cmd, AT_ST_ONLINE);
 }
 
 void at_sm_send_cmd_next(const char *cmd, at_state_t next_on_ok)

@@ -3,23 +3,23 @@ feature: agri-cloud
 status: delivered
 updated: 2026-07-11
 branch: feat/agri-cloud
-commits: 313966a..<head-pending>
+commits: 313966a..a707ddc
 ---
 
 # 端云协同智慧农业物联网系统（面试展示版）
 
 ## Report
 
-**What was built** — 在既有 FreeRTOS+LVGL/GUI Guider 底座上补齐端云协同智慧农业业务层：滑动平均滤波采集、滞回闭环控制与声光报警、环形缓冲本地曲线+断线续传、L610 AT 状态机（指数退避 1s→60s）、MQTT/JSON 属性上报与命令 seq 去重 ACK、双端模式/执行器同步、IWDG+任务心跳健康监控。业务代码集中在 `Core/*_app.*` / `system_data` / `at_sm` / `cloud_sync`，CubeMX 重生成不覆盖。`APP_CLOUD_SIM=1` 无模组可演示全链路状态机。
+**What was built** — 在既有 FreeRTOS+LVGL/GUI Guider 底座上补齐端云协同智慧农业业务层：滑动平均滤波、滞回闭环与声光报警、环形缓冲双用途（本地快照+断线续传）、L610 AT 状态机（显式 next_on_ok、指数退避 1s→60s、SIM/真机共用 INIT→…→ONLINE 序列）、MQTT/JSON 上报与命令 seq 去重、双端模式/执行器同步、IWDG+任务心跳。`APP_CLOUD_SIM=1` 默认无模组演示全链路。
 
-**Verification** — `cmake --preset Debug && cmake --build --preset Debug`：0 error；FLASH 552428B（52.68%），RAM 121304B/128KB（92.55%）。独立 Review 后修复：堆峰值/任务栈、UART 静态 RX 缓冲、退避不重置、UI 阈值不再 100ms 回写、续传仅在 publish 成功后 mark_sent、SIM 下行改为 force_report。
+**Verification** — `cmake --preset Debug && cmake --build --preset Debug`：0 error；FLASH 552152B（52.66%），RAM 121232B/128KB（92.49%）。四轮独立 Review：R1 堆/UART RX/退避/UI 回写；R2 SIM 链坍缩、真机 INIT、阈值标签覆写；R3 OK 越态、pub 截断、ACK 计数语义；R4 **clean（无 critical/major）**。
 
 **Journey log**
-1. 真实残余工程是 `STM32F407_LCD_Test` 而非 `basic_example`；后者无 FreeRTOS 业务骨架。
-2. HAL 包内缺 uart/iwdg 源，需从 STM32Cube_FW_F4_V1.28.3 拷贝进 Drivers。
-3. FreeRTOS 堆与多任务栈峰值冲突：User_App_Init 时 defaultTask 未删，必须压栈或延后创建。
-4. UI 双通道刷新若持续回写字典会冲掉云命令——改为「编辑提交 + 字典→控件回显」。
-5. UI 历史曲线未接 lv_chart；Spec 中本地曲线能力以环形缓冲 API 为准，GUI 曲线控件可作后续增强。
+1. 真实残余工程是 `STM32F407_LCD_Test` 而非 `basic_example`。
+2. HAL 包缺 uart/iwdg 源，从 STM32Cube_FW_F4_V1.28.3 拷入。
+3. FreeRTOS 堆与多任务栈峰值冲突：压栈 + 32KB 堆。
+4. AT 状态机禁止用命令字符串猜状态——必须显式 `s_next_on_ok`。
+5. OK/ERROR 仅在 `WAIT_OK` 处理；UI 状态徽标并入数据行，不碰 tab3 字段标题。
 
 ## [S1] Problem
 
@@ -44,8 +44,8 @@ commits: 313966a..<head-pending>
 | 历史环形缓冲 | `history_ring.*` | 64槽；本地曲线+断网续传游标 |
 | 健康监控 | `health_app.*` | 心跳表+IWDG；任一任务卡死不喂狗 |
 | L610 UART | `l610_uart.*` | USART1 中断收发环形缓冲 |
-| AT 状态机 | `at_sm.*` | 初始化/注册/MQTT/URC；指数退避 |
-| mini JSON | `json_mini.*` | 打包属性/解析命令 |
+| AT 状态机 | `at_sm.*` | 初始化/注册/MQTT/URC；指数退避；next_on_ok |
+| mini JSON | `json_mini.*` | 打包属性/解析命令（字段 has 位） |
 | MQTT 客户端 | `mqtt_client.*` | 基于 L610 CMQTT 的连接/订阅/发布 |
 | 云同步 | `cloud_sync.*` | 上报、命令去重 ACK、断线续传 |
 
@@ -53,11 +53,11 @@ commits: 313966a..<head-pending>
 
 | 任务 | 周期 | 优先级 | 栈 |
 |------|------|--------|-----|
-| defaultTask（已有） | 一次 | AboveNormal | 8KB，自删除 |
-| guiTask（已有） | ~5ms handler | Normal | 16KB |
-| sensorTask | 1000ms | Normal | 4KB |
+| defaultTask（已有） | 一次 | AboveNormal | 6KB，自删除 |
+| guiTask（已有） | ~5ms handler | Normal | 12KB |
+| sensorTask | 1000ms | Normal | 3KB |
 | controlTask | 200ms | AboveNormal | 2KB |
-| cloudTask | 20ms 轮询 | BelowNormal | 4KB |
+| cloudTask | 20ms 轮询 | BelowNormal | 3KB |
 | healthTask | 500ms | High | 2KB |
 
 共享：`g_DataMutex` 短临界区；云命令经 `cloud_sync` 写回字典。
@@ -65,33 +65,18 @@ commits: 313966a..<head-pending>
 ### 云协议要点
 
 - 主题：属性上报 `$oc/devices/{id}/sys/properties/report`；命令 `$oc/devices/{id}/sys/commands/#`
-- 命令：`set_mode` / `set_threshold` / `set_actuator` / `force_report`；`seq` 去重 + ACK
-- 断链：指数退避 1s→60s；恢复后按 `tx_cursor` 从环形缓冲补发
-- 无真机时 `APP_CLOUD_SIM=1`：AT 层用仿真应答驱动状态机，保证代码路径可运行可讲
+- 命令：`set_mode` / `set_threshold` / `set_actuator` / `force_report`；`seq` 去重 + ACK（发布失败计数）
+- 断链：指数退避 1s→60s；恢复后按游标从环形缓冲补发
+- 无真机时 `APP_CLOUD_SIM=1`：AT 层用仿真应答驱动完整状态链
 
 ### HAL 挂点
 
 - 启用 `HAL_UART_MODULE_ENABLED`、`HAL_IWDG_MODULE_ENABLED`
-- UART/IWDG 初始化在 `User_App_Init` 中手写（不依赖 .ioc 重生成）；CMake 增加 `stm32f4xx_hal_uart.c`、`stm32f4xx_hal_iwdg.c`
+- UART/IWDG 初始化在 `User_App_Init` 中手写；CMake 增加 uart/iwdg 驱动源
 
 ### UI
 
-复用 GUI Guider 三页；`custom.c` 增强：模式徽标、云状态、报警态、CO2 阈值联动、历史曲线页从环形缓冲刷 `lv_chart`（若 generated 无 chart，则用标签列表+简化曲线控件动态创建在 tab3/tab2 空位）。
-
-### 面试重点难点栈（已确认，六位一体）
-
-叙事主线：**裸机 AT 阻塞 → 多任务重构 → 本地闭环 → 云可靠链路 → 系统可运维**。
-
-| # | 难点 | 挂载点 | 面试一句话 |
-|---|------|--------|-----------|
-| 1 | 架构隔离 + 优先级 + 互斥锁 | user_app / freertos 挂点 / system_data | 业务与 CubeMX 生成面完全隔离；按实时性排优先级；共享黑板用 Mutex 短临界区 |
-| 2 | 滑动平均 + 滞回闭环 + 声光报警 | sensor_app / control_app / actuator | 窗口均值去毛刺；阈值带滞回防抖；越限本地闭环不依赖云 |
-| 3 | 环形缓冲双用途 | history_ring | 同一队列：本地曲线 + 离线缓存；带 seq 与发送游标 |
-| 4 | AT 状态机 + 指数退避 | at_sm / l610_uart | 应答与 URC 分流；断链 1s→60s 退避，恢复重订阅 |
-| 5 | MQTT + 命令去重 ACK + 双端同步 | mqtt_client / cloud_sync / json_mini | seq 去重防重发；ACK 超时；云干预与本地自动双端状态一致 |
-| 6 | 看门狗 + 任务健康监控 | health_app + IWDG | 心跳表全绿才喂狗；任一任务卡死触发复位并可观测 |
-
-不纳入（避免突兀）：Flash 掉电存储、Host 单测框架、CPU/栈水位统计——与主叙事弱相关，按用户先前选择裁剪。
+复用 GUI Guider 三页；状态徽标并入 TEMP/LIGHT/CO2 数据行；阈值编辑退出时提交，字典→spinbox 回显。
 
 ### 验证边界
 
@@ -114,5 +99,7 @@ commits: 313966a..<head-pending>
 
 ## S2 偏差说明（Review 后修订）
 
-- 本地历史曲线：环形缓冲 API 已齐；GUI `lv_chart` 未嵌入现有 GUI Guider 布局（避免挤占三页控件），面试以 `history_ring` 双用途讲解为准。
+- 本地历史曲线：环形缓冲 API 已齐；GUI `lv_chart` 未嵌入现有 GUI Guider 布局，面试以 `history_ring` 双用途讲解为准。
 - 真机 L610 的 CMQTTPUB 命令串仍为简化格式，默认 `APP_CLOUD_SIM=1`；接真模组时需按模组手册补全 topic/clientId 字段。
+- ACK 无应用层“云端已确认”回执：`cmd_ack_timeout` 仅在 ACK `mqtt_publish` 失败时累加。
+- 真机上行 in-flight 期间到达的下行 ACK 会失败并计数（指标噪音）；功能靠 seq 去重保证。

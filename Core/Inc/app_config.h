@@ -37,8 +37,8 @@
 #define APP_CLOUD_TOPIC_CMD_RSP     "$oc/devices/" APP_CLOUD_DEVICE_ID "/sys/commands/response"
 #define APP_BACKOFF_MIN_MS          1000
 #define APP_BACKOFF_MAX_MS          60000
-#define APP_CMD_ACK_TIMEOUT_MS      3000
-#define APP_CLOUD_STACK_WORDS       1024
+/* ACK 无应用层回执：仅 mqtt_publish 失败时计入 cmd_ack_timeout */
+#define APP_CLOUD_STACK_WORDS       768
 
 /* ---- UART ---- */
 #define APP_L610_BAUD               115200

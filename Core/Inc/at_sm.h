@@ -37,9 +37,6 @@ uint32_t at_sm_backoff_ms(void);
 /** 发送一条 AT 命令并进入 WAIT_OK；OK 后进入 next_on_ok */
 void at_sm_send_cmd_next(const char *cmd, at_state_t next_on_ok);
 
-/** 兼容：发命令，OK 后回 ONLINE */
-void at_sm_send_cmd(const char *cmd);
-
 /** 从 UART 拉字节喂给状态机（内部调用） */
 void at_sm_feed(void);
 
