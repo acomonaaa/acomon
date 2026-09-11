@@ -1,4 +1,4 @@
-﻿/* USER CODE BEGIN Header */
+/* USER CODE BEGIN Header */
 /**
   ******************************************************************************
   * File Name          : freertos.c
@@ -33,6 +33,9 @@
 #include "gui_guider.h"
 #include "events_init.h"
 #include "custom.h"
+#include "user_app.h"  /* 业务层隔离入口 - 仅此一处引入 */
+#include "health_app.h"
+#include "app_config.h"
 #include <stdio.h>
 /* USER CODE END Includes */
 
@@ -54,13 +57,13 @@
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
 
-/* 鍒濆鍖栧畬鎴愪俊鍙烽噺锛歞efaultTask 瀹屾垚纭欢鍒濆鍖栧悗閫氱煡 guiTask */
+/* 初始化完成信号量：defaultTask 完成硬件初始化后通知 guiTask */
 osSemaphoreId_t xInitDoneSem;
 
-/* GUI 浜掓枼閿侊紝淇濇姢 LVGL API 绾跨▼瀹夊叏 */
+/* GUI 互斥锁，保护 LVGL API 线程安全 */
 osMutexId_t xGuiMutex;
 
-/* GUI Guider 鍏ㄥ眬 UI 缁撴瀯浣?*/
+/* GUI Guider 全局 UI 结构体 */
 extern lv_ui guider_ui;
 /* USER CODE END Variables */
 
@@ -68,7 +71,7 @@ extern lv_ui guider_ui;
 osThreadId_t defaultTaskHandle;
 const osThreadAttr_t defaultTask_attributes = {
   .name = "defaultTask",
-  .stack_size = 2048 * 4,
+  .stack_size = 1536 * 4, /* 6KB：仅硬件初始化后自删除 */
   .priority = (osPriority_t) osPriorityAboveNormal,
 };
 
@@ -76,7 +79,7 @@ const osThreadAttr_t defaultTask_attributes = {
 osThreadId_t guiTaskHandle;
 const osThreadAttr_t guiTask_attributes = {
   .name = "guiTask",
-  .stack_size = 4096 * 4,
+  .stack_size = 3072 * 4, /* 12KB：LVGL 足够 */
   .priority = (osPriority_t) osPriorityNormal,
 };
 
@@ -105,7 +108,7 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE END RTOS_MUTEX */
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
-  /* 鍒涘缓鍒濆鍖栧畬鎴愪俊鍙烽噺锛堝垵濮嬭鏁颁负0锛岀瓑寰?defaultTask Release锛?*/
+  /* 创建初始化完成信号量（初始计数为0，等待 defaultTask Release） */
   xInitDoneSem = osSemaphoreNew(1, 0, NULL);
   /* USER CODE END RTOS_SEMAPHORES */
 
@@ -143,7 +146,7 @@ void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN StartDefaultTask */
 
-  /* 1. 鍒濆鍖?LCD 纭欢锛堟牎鍑嗛渶瑕佺洿鎺ユ搷浣?LCD锛?*/
+  /* 1. 初始化 LCD 硬件（校准需要直接操作 LCD） */
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_15, GPIO_PIN_SET);
   HAL_GPIO_WritePin(GPIOG, GPIO_PIN_12, GPIO_PIN_RESET);
   if (LCD_Init() != 0) {
@@ -157,15 +160,20 @@ void StartDefaultTask(void *argument)
   lv_init();
   lv_port_disp_init();
 
-  /* 4. 触摸已禁用，不注册输入设备 */
+  /* 4. 初始化 LVGL 输入设备（Encoder Indev 仅提供 indev→Group 绑定，
+   *    实际按键扫描由 custom_ui_process_keys() 手动完成，见 custom.c） */
+  lv_port_indev_init();
 
-  /* 5. 鍒涘缓 GUI 浜掓枼閿?*/
+  /* 5. 创建 GUI 互斥锁 */
   xGuiMutex = osMutexNew(NULL);
 
-  /* 6. 閫氱煡 guiTask锛氱‖浠跺垵濮嬪寲鍏ㄩ儴瀹屾垚 */
+  /* 6. 初始化业务层：先准备共享数据和后台任务，再放行 GUI */
+  User_App_Init();
+
+  /* 7. 通知 guiTask：硬件初始化和业务层初始化均已完成 */
   osSemaphoreRelease(xInitDoneSem);
 
-  /* 鍒濆鍖栧畬鎴愶紝defaultTask 涓嶅啀闇€瑕侊紝鍙互鍒犻櫎鑷韩 */
+  /* 初始化完成：defaultTask 不再需要，可以删除自身（未注册心跳槽） */
   vTaskDelete(NULL);
 
   /* USER CODE END StartDefaultTask */
@@ -174,7 +182,8 @@ void StartDefaultTask(void *argument)
 /* USER CODE BEGIN Header_StartGUITask */
 /**
   * @brief  Function implementing the guiTask thread.
-  *         璐熻矗 GUI Guider UI 鍒濆鍖栧拰 lv_timer_handler 涓诲惊鐜?  * @param  argument: Not used
+  *         负责 GUI Guider UI 初始化和 lv_timer_handler 主循环
+  * @param  argument: Not used
   * @retval None
   */
 /* USER CODE END Header_StartGUITask */
@@ -182,22 +191,36 @@ void StartGUITask(void *argument)
 {
   /* USER CODE BEGIN StartGUITask */
 
-  /* 闃诲绛夊緟 defaultTask 瀹屾垚 LCD/LVGL/瑙︽懜鍒濆鍖栵紙淇″彿閲忓悓姝ワ紝闈炲浐瀹氬欢鏃讹級 */
+  /* 阻塞等待 defaultTask 完成 LCD/LVGL/触摸初始化（信号量同步，非固定延时） */
   osSemaphoreAcquire(xInitDoneSem, osWaitForever);
 
-  /* 鑾峰彇閿佸悗鍒濆鍖?GUI Guider UI */
+  /* 获取锁后初始化 GUI Guider UI */
   if (osMutexAcquire(xGuiMutex, osWaitForever) == osOK) {
     setup_ui(&guider_ui);
     events_init(&guider_ui);
     custom_init(&guider_ui);
+    custom_ui_update_data();
     osMutexRelease(xGuiMutex);
   }
 
-  /* GUI 涓诲惊鐜?*/
+  /* GUI 主循环：lv_timer_handler + 主循环数据刷新（绕过 lv_timer 定时问题） */
   for (;;) {
+    health_beat(APP_HB_GUI);
     if (osMutexAcquire(xGuiMutex, osWaitForever) == osOK) {
+      custom_ui_process_keys();
       lv_timer_handler();
       osMutexRelease(xGuiMutex);
+    }
+    /* 每 ~100ms 直接刷新传感器数据到屏幕（主循环方式，不依赖 lv_timer） */
+    {
+      static uint32_t _refresh_cnt = 0;
+      if (++_refresh_cnt >= 20) {
+        _refresh_cnt = 0;
+        if (osMutexAcquire(xGuiMutex, osWaitForever) == osOK) {
+          custom_ui_update_data();
+          osMutexRelease(xGuiMutex);
+        }
+      }
     }
     osDelay(5);
   }

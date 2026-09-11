@@ -34,7 +34,33 @@ enable_language(C ASM)
 # Create an executable object type
 add_executable(${CMAKE_PROJECT_NAME}
         Core/Src/lcd.c
-        Core/Inc/lcd.h)
+        Core/Inc/lcd.h
+        # 业务隔离层（CubeMX 不会触碰）
+        Core/Inc/system_data.h
+        Core/Src/system_data.c
+        Core/Inc/user_app.h
+        Core/Src/user_app.c
+        Core/Inc/sensor_app.h
+        Core/Src/sensor_app.c
+        Core/Inc/control_app.h
+        Core/Src/control_app.c
+        Core/Inc/app_config.h
+        Core/Inc/history_ring.h
+        Core/Src/history_ring.c
+        Core/Inc/actuator.h
+        Core/Src/actuator.c
+        Core/Inc/health_app.h
+        Core/Src/health_app.c
+        Core/Inc/l610_uart.h
+        Core/Src/l610_uart.c
+        Core/Inc/at_sm.h
+        Core/Src/at_sm.c
+        Core/Inc/json_mini.h
+        Core/Src/json_mini.c
+        Core/Inc/mqtt_client.h
+        Core/Src/mqtt_client.c
+        Core/Inc/cloud_sync.h
+        Core/Src/cloud_sync.c)
 
 # Add STM32CubeMX generated sources
 add_subdirectory(cmake/stm32cubemx)
