@@ -20,10 +20,6 @@
 #define RETX_BATCH      4      /* 单次续传条数 */
 
 static uint32_t s_last_uplink_ms;
-static uint32_t s_last_ack_ms;
-static uint32_t s_pending_ack_seq;
-static uint8_t s_ack_waiting;
-static char s_ack_cmd[32];
 
 static void apply_cloud_cmd(const cloud_cmd_t *cmd)
 {
@@ -72,14 +68,15 @@ static void handle_downlink(void)
 
     apply_cloud_cmd(&cmd);
 
-    /* 发 ACK 并启动超时确认窗口 */
+    /* 发 ACK；协议无应用层“云端已确认”回执，故仅在发布失败时计入超时/失败 */
     char ack[128];
     json_pack_ack(ack, sizeof(ack), cmd.cmd, cmd.seq, 0);
-    mqtt_publish(APP_CLOUD_TOPIC_CMD_RSP, ack);
-    s_pending_ack_seq = cmd.seq;
-    snprintf(s_ack_cmd, sizeof(s_ack_cmd), "%s", cmd.cmd);
-    s_ack_waiting = 1;
-    s_last_ack_ms = osKernelGetTickCount();
+    if (!mqtt_publish(APP_CLOUD_TOPIC_CMD_RSP, ack)) {
+        if (osMutexAcquire(g_DataMutex, osWaitForever) == osOK) {
+            g_SysData.cmd_ack_timeout++;
+            osMutexRelease(g_DataMutex);
+        }
+    }
 }
 
 static int uplink_one(const history_sample_t *s)
@@ -130,7 +127,6 @@ void cloud_sync_init(void)
 #endif
     mqtt_client_init();
     s_last_uplink_ms = 0;
-    s_ack_waiting = 0;
 }
 
 void StartCloudTask(void *argument)
@@ -140,15 +136,6 @@ void StartCloudTask(void *argument)
         at_sm_poll();
         handle_downlink();
         uplink_flow();
-
-        /* ACK 超时：记失败计数，等待重连/重发（seq 仍保留，云端可重推） */
-        if (s_ack_waiting && (osKernelGetTickCount() - s_last_ack_ms) > APP_CMD_ACK_TIMEOUT_MS) {
-            s_ack_waiting = 0;
-            if (osMutexAcquire(g_DataMutex, osWaitForever) == osOK) {
-                g_SysData.cmd_ack_timeout++;
-                osMutexRelease(g_DataMutex);
-            }
-        }
 
         health_beat(APP_HB_CLOUD);
         osDelay(CLOUD_POLL_MS);

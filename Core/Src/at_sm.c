@@ -27,9 +27,7 @@ static uint32_t s_backoff_ms = APP_BACKOFF_MIN_MS;
 static char s_line[256];
 static uint32_t s_line_len;
 #endif
-static char s_pending_cmd[160];
-static char s_pub_topic[128];
-static char s_pub_payload[192];
+static char s_pending_cmd[420];
 
 static char s_urc_payload[256];
 static uint8_t s_urc_ready;
@@ -123,6 +121,10 @@ static void handle_line(const char *line)
 
     if (strncmp(line, "+CMQTTPUBLISH:", 14) == 0) {
         handle_urc_line(line);
+        return;
+    }
+    /* OK/ERROR 只在等待应答时驱动状态机；BACKOFF/ONLINE 忽略迟到应答 */
+    if (s_state != AT_ST_WAIT_OK) {
         return;
     }
     if (strcmp(line, "OK") == 0) {
@@ -237,7 +239,13 @@ void at_sm_poll(void)
 #endif
 
     if (s_state == AT_ST_WAIT_OK) {
-        uint32_t to = s_publish_inflight ? 3000 : 2000;
+        uint32_t to = 2000;
+        if (s_publish_inflight) {
+            to = 3000;
+        } else if (s_next_on_ok == AT_ST_MQTT_SUB || s_next_on_ok == AT_ST_ONLINE) {
+            /* CONNECT/SUB 阶段可能更慢 */
+            to = 8000;
+        }
         if ((osKernelGetTickCount() - s_state_enter_ms) > to) {
             schedule_backoff();
         }
@@ -272,26 +280,24 @@ int at_sm_publish(const char *topic, const char *payload)
         return 0;
     }
 #if APP_CLOUD_SIM
-    snprintf(s_pub_topic, sizeof(s_pub_topic), "%s", topic);
-    snprintf(s_pub_payload, sizeof(s_pub_payload), "%s", payload);
+    (void)topic;
+    (void)payload;
     if (osMutexAcquire(g_DataMutex, osWaitForever) == osOK) {
         g_SysData.uplink_ok++;
         osMutexRelease(g_DataMutex);
     }
     return 1;
 #else
-    /* 真机：发送 pub 并等待 OK 后才算成功；不允许并发第二条 */
+    /* 真机：写入 UART 并等 OK；不允许并发第二条 */
     if (s_state != AT_ST_ONLINE || s_publish_inflight) return 0;
     {
-        char cmd[384];
+        char cmd[400];
         int plen = (int)strlen(payload);
         snprintf(cmd, sizeof(cmd), "AT+CMQTTPUB=0,0,%d,%s", plen, payload);
         s_publish_inflight = 1;
-        /* pub 成功后仍回 ONLINE，不走连接序列 */
         at_sm_send_cmd_next(cmd, AT_ST_ONLINE);
     }
-    (void)s_pub_topic;
-    (void)s_pub_payload;
+    (void)topic;
     return 1;
 #endif
 }

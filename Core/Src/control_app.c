@@ -22,7 +22,6 @@ static uint8_t hyst_need_fan(float temp, float thr)
     return s_fan_on;
 }
 
-static uint8_t s_hum_on;
 static uint8_t hyst_need_pump(float humi, float thr)
 {
     /* 湿度过低灌溉 */
@@ -38,7 +37,6 @@ static uint8_t hyst_need_light(uint32_t lux, uint32_t thr)
     return s_light_on;
 }
 
-static uint8_t s_co2_on;
 static uint8_t hyst_need_vent(float co2, float thr)
 {
     if (co2 > thr) s_co2_on = 1;
