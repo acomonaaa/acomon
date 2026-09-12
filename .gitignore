@@ -1,0 +1,25 @@
+# IDE
+.idea/
+.vscode/
+*.user
+*.suo
+
+# Build
+build/
+cmake-build-*/
+Debug/
+Release/
+*.o
+*.d
+*.elf
+*.bin
+*.hex
+*.map
+*.lst
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude / local agents
+.claude/
