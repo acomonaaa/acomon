@@ -75,7 +75,13 @@ void at_sm_send_cmd_next(const char *cmd, at_state_t next_on_ok)
 
 static void schedule_backoff(void)
 {
-    s_publish_inflight = 0;
+    if (s_publish_inflight) {
+        s_publish_inflight = 0;
+        if (osMutexAcquire(g_DataMutex, osWaitForever) == osOK) {
+            g_SysData.uplink_fail++;
+            osMutexRelease(g_DataMutex);
+        }
+    }
     s_backoff_ms <<= 1;
     if (s_backoff_ms > APP_BACKOFF_MAX_MS) s_backoff_ms = APP_BACKOFF_MAX_MS;
     enter(AT_ST_BACKOFF);
@@ -127,14 +133,7 @@ static void handle_line(const char *line)
         return;
     }
     if (strncmp(line, "ERROR", 5) == 0 || strncmp(line, "+CME ERROR", 10) == 0) {
-        if (s_publish_inflight) {
-            s_publish_inflight = 0;
-            if (osMutexAcquire(g_DataMutex, osWaitForever) == osOK) {
-                g_SysData.uplink_fail++;
-                osMutexRelease(g_DataMutex);
-            }
-        }
-        schedule_backoff();
+        schedule_backoff(); /* 内部处理 publish_inflight 失败计数 */
         return;
     }
 }

@@ -1169,8 +1169,8 @@ static void history_chart_create(lv_obj_t *parent)
     if (!parent || s_hist_chart) return;
 
     s_hist_chart = lv_chart_create(parent);
-    lv_obj_set_pos(s_hist_chart, 8, 148);
-    lv_obj_set_size(s_hist_chart, 304, 38);
+    lv_obj_set_pos(s_hist_chart, 8, 152);
+    lv_obj_set_size(s_hist_chart, 304, 36);
     lv_chart_set_type(s_hist_chart, LV_CHART_TYPE_LINE);
     lv_chart_set_point_count(s_hist_chart, HIST_CHART_POINTS);
     lv_chart_set_range(s_hist_chart, LV_CHART_AXIS_PRIMARY_Y, 0, 100);

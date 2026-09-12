@@ -55,20 +55,31 @@ uint8_t DHT11_CHECK(void)
     return (retry < 100) ? 1 : 0;
 }
 
-uint8_t DHT11_read_byte(void)
+uint8_t DHT11_read_byte(uint8_t *out)
 {
     uint8_t i, dat = 0;
+    if (out == NULL) return 1;
+
     for (i = 0; i < 8; i++) {
+        uint8_t retry = 0;
+        /* 等低电平结束（bit 前导 50us） */
         while (DHT11_PIN_IN == GPIO_PIN_RESET) {
+            if (++retry > 100) return 1;
+            delay_us(1);
         }
         delay_us(40);
         if (DHT11_PIN_IN == GPIO_PIN_SET) {
             dat |= (uint8_t)(0x80U >> i);
         }
+        retry = 0;
+        /* 等高电平结束（bit 间隙） */
         while (DHT11_PIN_IN == GPIO_PIN_SET) {
+            if (++retry > 100) return 1;
+            delay_us(1);
         }
     }
-    return dat;
+    *out = dat;
+    return 0;
 }
 
 uint8_t DHT11_read_data(uint8_t *temperature, uint8_t *humidity)
@@ -82,7 +93,7 @@ uint8_t DHT11_read_data(uint8_t *temperature, uint8_t *humidity)
     if (!DHT11_CHECK()) return 1;
 
     for (i = 0; i < 5; i++) {
-        buf[i] = DHT11_read_byte();
+        if (DHT11_read_byte(&buf[i]) != 0) return 1;
     }
     if ((uint8_t)(buf[0] + buf[1] + buf[2] + buf[3]) != buf[4]) return 1;
 
