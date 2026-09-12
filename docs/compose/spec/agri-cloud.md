@@ -1,18 +1,25 @@
 ---
 feature: agri-cloud
-status: in-progress
+status: delivered
 updated: 2026-07-11
 branch: feat/agri-cloud
-commits: 313966a..89b9e8e
+commits: 313966a..6fea0ad
 ---
 
 # 端云协同智慧农业物联网系统（面试展示版）
 
 ## Report
 
-**What was built** — 在既有 FreeRTOS+LVGL/GUI Guider 底座上补齐端云协同智慧农业业务层：滑动平均滤波、滞回闭环与声光报警、环形缓冲双用途（本地快照+断线续传）、L610 AT 状态机（显式 next_on_ok、指数退避 1s→60s、SIM/真机共用 INIT→…→ONLINE 序列）、MQTT/JSON 上报与命令 seq 去重、双端模式/执行器同步、IWDG+任务心跳。`APP_CLOUD_SIM=1` 默认无模组演示全链路。R4 review clean。
+**What was built** — 在既有 FreeRTOS+LVGL/GUI Guider 底座上补齐端云协同智慧农业业务层：滑动平均滤波、滞回闭环与声光报警、环形缓冲双用途、L610 AT 状态机（next_on_ok + 指数退避 1s→60s + SIM/真机共用序列）、MQTT/JSON 上报与 seq 去重、双端同步、IWDG+心跳健康监控。Amendment 增量：control 页 32 点 lv_chart 历史曲线、DHT11 可编译真机路径（DWT 延时 + 读超时）、pub busy/offline 指标分离。`APP_CLOUD_SIM=1` 默认无模组演示全链路。
 
-**Verification** — `cmake --preset Debug && cmake --build --preset Debug`：0 error；FLASH 552152B（52.66%），RAM 121232B/128KB（92.49%）。四轮独立 Review：R1 堆/UART RX/退避/UI 回写；R2 SIM 链坍缩、真机 INIT、阈值标签覆写；R3 OK 越态、pub 截断、ACK 计数语义；R4 **clean（无 critical/major）**。
+**Verification** — `cmake --preset Debug && cmake --build --preset Debug`：0 error；FLASH ~554800B（52.91%），RAM 121504B/128KB（92.70%）。Review：R1–R4 基线 clean；R5 A1–A3 增量发现 DHT11.h 未入库 + 读字节无超时 → `6fea0ad` 修复后短轮复核 **clean**。
+
+**Journey log**
+1. 真实残余工程是 `STM32F407_LCD_Test` 而非 `basic_example`。
+2. AT 状态机禁止用命令字符串猜状态——必须显式 `s_next_on_ok`。
+3. OK/ERROR 仅在 `WAIT_OK` 处理；UI 徽标并入数据行，不碰 tab3 字段标题。
+4. 真机单总线必须全路径超时，否则 IWDG 会整机复位而非回退采样。
+5. 上行失败计数唯一入口：`schedule_backoff` 的 `s_publish_inflight` 分支。
 
 **Journey log**
 1. 真实残余工程是 `STM32F407_LCD_Test` 而非 `basic_example`。
