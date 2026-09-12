@@ -18,14 +18,16 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "cmsis_os.h"
 #include "gpio.h"
 #include "fsmc.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "lcd.h"
 #include "lvgl.h"
-#include "lv_port_disp.h"
+#include "gui_guider.h"
+#include "events_init.h"
+#include "custom.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -46,11 +48,12 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+lv_ui guider_ui;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
+void MX_FREERTOS_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -91,29 +94,17 @@ int main(void)
   MX_GPIO_Init();
   MX_FSMC_Init();
   /* USER CODE BEGIN 2 */
-
-  /* 1. 开启背光 */
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_15, GPIO_PIN_SET);
-
-  /* 2. 拉低NE4片选 */
-  HAL_GPIO_WritePin(GPIOG, GPIO_PIN_12, GPIO_PIN_RESET);
-
-  /* 3. 初始化LCD */
-  if (LCD_Init() != 0)
-  {
-    Error_Handler();
-  }
-
-  /* 4. 初始化LVGL */
-  lv_init();
-  lv_port_disp_init();
-
-  /* 5. 创建测试界面 */
-  lv_obj_t * label = lv_label_create(lv_screen_active());
-  lv_label_set_text(label, "Hello LVGL!");
-  lv_obj_center(label);
-
+  /* LCD和LVGL初始化已移至FreeRTOS任务中执行 */
   /* USER CODE END 2 */
+
+  /* Init scheduler */
+  osKernelInitialize();  /* Call init function for freertos objects (in cmsis_os2.c) */
+  MX_FREERTOS_Init();
+
+  /* Start scheduler */
+  osKernelStart();
+
+  /* We should never get here as control is now taken by the scheduler */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
@@ -122,8 +113,6 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    lv_timer_handler();
-    HAL_Delay(5);
   }
   /* USER CODE END 3 */
 }
@@ -174,8 +163,30 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-
+/* lv_tick_inc 已不再需要，LVGL 现在通过 LV_TICK_CUSTOM 直接读取 osKernelGetTickCount() */
 /* USER CODE END 4 */
+
+/**
+  * @brief  Period elapsed callback in non blocking mode
+  * @note   This function is called  when TIM6 interrupt took place, inside
+  * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
+  * a global variable "uwTick" used as application time base.
+  * @param  htim : TIM handle
+  * @retval None
+  */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  /* USER CODE BEGIN Callback 0 */
+
+  /* USER CODE END Callback 0 */
+  if (htim->Instance == TIM6)
+  {
+    HAL_IncTick();
+  }
+  /* USER CODE BEGIN Callback 1 */
+
+  /* USER CODE END Callback 1 */
+}
 
 /**
   * @brief  This function is executed in case of error occurrence.

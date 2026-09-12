@@ -34,7 +34,35 @@ enable_language(C ASM)
 # Create an executable object type
 add_executable(${CMAKE_PROJECT_NAME}
         Core/Src/lcd.c
-        Core/Inc/lcd.h)
+        Core/Inc/lcd.h
+        # 业务隔离层（CubeMX 不会触碰）
+        Core/Inc/system_data.h
+        Core/Src/system_data.c
+        Core/Inc/user_app.h
+        Core/Src/user_app.c
+        Core/Inc/sensor_app.h
+        Core/Src/sensor_app.c
+        Core/Inc/control_app.h
+        Core/Src/control_app.c
+        Core/Inc/app_config.h
+        Core/Inc/history_ring.h
+        Core/Src/history_ring.c
+        Core/Inc/actuator.h
+        Core/Src/actuator.c
+        Core/Inc/health_app.h
+        Core/Src/health_app.c
+        Core/Inc/l610_uart.h
+        Core/Src/l610_uart.c
+        Core/Inc/at_sm.h
+        Core/Src/at_sm.c
+        Core/Inc/json_mini.h
+        Core/Src/json_mini.c
+        Core/Inc/mqtt_client.h
+        Core/Src/mqtt_client.c
+        Core/Inc/cloud_sync.h
+        Core/Src/cloud_sync.c
+        Core/Inc/DHT11.h
+        Core/Src/DHT11.c)
 
 # Add STM32CubeMX generated sources
 add_subdirectory(cmake/stm32cubemx)
@@ -47,11 +75,27 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # LVGL 源文件（递归查找）
 file(GLOB_RECURSE LVGL_SRC "lvgl/src/*.c")
 
+# GUI Guider 源文件
+set(GUIGUIDER_SRC
+    ui/generated/gui_guider.c
+    ui/generated/events_init.c
+    ui/generated/widgets_init.c
+    ui/generated/setup_scr_screen.c
+    ui/custom/custom.c
+)
+
+# GUI Guider 字体文件
+file(GLOB GUIGUIDER_FONTS "ui/generated/guider_fonts/*.c")
+
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
     ${LVGL_SRC}
-    Core/Src/lv_port_disp.c
+    lvgl/porting/lv_port_disp.c
+    Core/Src/touch.c
+    Core/Src/lv_port_indev.c
+    ${GUIGUIDER_SRC}
+    ${GUIGUIDER_FONTS}
 )
 
 # Add include paths
@@ -59,6 +103,10 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
     lvgl
     lvgl/src
+    lvgl/porting
+    Core/Inc
+    ui/generated
+    ui/custom
 )
 
 # Add project symbols (macros)

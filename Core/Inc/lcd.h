@@ -45,6 +45,7 @@ uint16_t LCD_GetHeight(void);
 void LCD_DrawLine(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color);
 void LCD_DrawRect(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color);
 void LCD_DrawCircle(uint16_t x0, uint16_t y0, uint16_t r, uint16_t color);
+void LCD_ShowString(uint16_t x, uint16_t y, uint16_t width, uint16_t height, uint8_t size, uint8_t *str);
 
 /* 颜色定义 */
 #define COLOR_WHITE   0xFFFF
