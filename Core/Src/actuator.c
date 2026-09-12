@@ -4,6 +4,7 @@
  */
 #include "actuator.h"
 #include "main.h"
+#include "app_config.h"
 
 static uint8_t s_duty;
 static uint8_t s_pwm_phase;
@@ -34,7 +35,7 @@ void actuator_set(actuator_id_t id, uint8_t on)
     switch (id) {
     case ACT_FAN:        HAL_GPIO_WritePin(FAN_GPIO_Port, FAN_Pin, st); break;
     case ACT_PUMP:       HAL_GPIO_WritePin(PUMP_GPIO_Port, PUMP_Pin, st); break;
-    case ACT_GROW_LIGHT: /* 由 PWM tick 驱动 */ s_duty = on ? 100 : 0; break;
+    case ACT_GROW_LIGHT: s_duty = on ? 100 : 0; break;
     case ACT_ALARM:      actuator_alarm_set(on); break;
     default: break;
     }
@@ -48,9 +49,9 @@ void actuator_set_light_duty(uint8_t duty_pct)
 
 void actuator_pwm_tick(void)
 {
-    /* 200ms 任务内 10 步相位 → 等效 5Hz 软 PWM，足够演示补光调光 */
-    s_pwm_phase = (uint8_t)((s_pwm_phase + 1) % 10);
-    uint8_t on = (s_pwm_phase * 10 < s_duty) ? 1 : 0;
+    const uint8_t phases = (uint8_t)APP_SOFT_PWM_PHASES;
+    s_pwm_phase = (uint8_t)((s_pwm_phase + 1) % phases);
+    uint8_t on = ((uint16_t)s_pwm_phase * 100U / phases < s_duty) ? 1 : 0;
     HAL_GPIO_WritePin(GROW_LIGHT_GPIO_Port, GROW_LIGHT_Pin, on ? GPIO_PIN_SET : GPIO_PIN_RESET);
 }
 

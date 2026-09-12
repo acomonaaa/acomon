@@ -9,6 +9,10 @@
 #include "health_app.h"
 #include "app_config.h"
 
+#if !APP_SENSOR_SIM
+#include "DHT11.h"
+#endif
+
 #include <math.h>
 #include <string.h>
 
@@ -50,6 +54,20 @@ void StartSensorTask(void *argument)
 {
     (void)argument;
 
+#if !APP_SENSOR_SIM
+    /* DHT11 引脚：开漏输出，外部上拉 */
+    {
+        GPIO_InitTypeDef g = {0};
+        __HAL_RCC_GPIOG_CLK_ENABLE();
+        g.Pin = DHT11_Pin;
+        g.Mode = GPIO_MODE_OUTPUT_OD;
+        g.Pull = GPIO_PULLUP;
+        g.Speed = GPIO_SPEED_FREQ_LOW;
+        HAL_GPIO_Init(DHT11_GPIO_Port, &g);
+        DHT11_PIN_OUT_HIGH;
+    }
+#endif
+
     for (;;) {
         float raw_t, raw_h, raw_c;
         uint32_t raw_lux;
@@ -57,18 +75,29 @@ void StartSensorTask(void *argument)
 #if APP_SENSOR_SIM
         sim_sample(&raw_t, &raw_h, &raw_c, &raw_lux);
 #else
-        /* 真实 DHT11 路径：读失败则沿用上一次滤波值 */
         {
             uint8_t t8 = 0, h8 = 0;
             if (DHT11_read_data(&t8, &h8) == 0) {
                 raw_t = (float)t8;
                 raw_h = (float)h8;
             } else {
-                raw_t = g_SysData.temp;
-                raw_h = g_SysData.humi;
+                if (osMutexAcquire(g_DataMutex, osWaitForever) == osOK) {
+                    raw_t = g_SysData.temp;
+                    raw_h = g_SysData.humi;
+                    osMutexRelease(g_DataMutex);
+                } else {
+                    raw_t = 25.0f;
+                    raw_h = 50.0f;
+                }
             }
-            raw_c   = g_SysData.co2;
-            raw_lux = g_SysData.light;
+            if (osMutexAcquire(g_DataMutex, osWaitForever) == osOK) {
+                raw_c   = g_SysData.co2;
+                raw_lux = g_SysData.light;
+                osMutexRelease(g_DataMutex);
+            } else {
+                raw_c = 400.0f;
+                raw_lux = 0;
+            }
         }
 #endif
         /* 滑动平均 */

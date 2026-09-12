@@ -127,6 +127,13 @@ static void handle_line(const char *line)
         return;
     }
     if (strncmp(line, "ERROR", 5) == 0 || strncmp(line, "+CME ERROR", 10) == 0) {
+        if (s_publish_inflight) {
+            s_publish_inflight = 0;
+            if (osMutexAcquire(g_DataMutex, osWaitForever) == osOK) {
+                g_SysData.uplink_fail++;
+                osMutexRelease(g_DataMutex);
+            }
+        }
         schedule_backoff();
         return;
     }
@@ -267,6 +274,11 @@ int at_sm_take_publish(char *out, uint32_t max_len)
 int at_sm_publish(const char *topic, const char *payload)
 {
     if (topic == NULL || payload == NULL) return 0;
+
+    /* busy：pub 已在途或等待应答 —— 不算 offline，也不计 uplink_fail */
+    if (s_publish_inflight || s_state == AT_ST_WAIT_OK) {
+        return 0;
+    }
     if (!at_sm_is_online()) {
         if (osMutexAcquire(g_DataMutex, osWaitForever) == osOK) {
             g_SysData.uplink_fail++;
@@ -283,8 +295,6 @@ int at_sm_publish(const char *topic, const char *payload)
     }
     return 1;
 #else
-    /* 真机：写入 UART 并等 OK；不允许并发第二条 */
-    if (s_state != AT_ST_ONLINE || s_publish_inflight) return 0;
     {
         char cmd[400];
         int plen = (int)strlen(payload);

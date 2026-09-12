@@ -60,7 +60,9 @@ add_executable(${CMAKE_PROJECT_NAME}
         Core/Inc/mqtt_client.h
         Core/Src/mqtt_client.c
         Core/Inc/cloud_sync.h
-        Core/Src/cloud_sync.c)
+        Core/Src/cloud_sync.c
+        Core/Inc/DHT11.h
+        Core/Src/DHT11.c)
 
 # Add STM32CubeMX generated sources
 add_subdirectory(cmake/stm32cubemx)

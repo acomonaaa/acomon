@@ -16,7 +16,8 @@
 #define APP_HYST_HUMI_PCT           5.0f
 #define APP_HYST_LIGHT_PCT          10
 #define APP_HYST_CO2_PPM            50.0f
-#define APP_LIGHT_PWM_HZ            1000  /* 补光软 PWM 频率（控制任务内） */
+/* 软 PWM：control 200ms 一次 tick，10 相位 → 视觉调光约 0.5Hz（演示用） */
+#define APP_SOFT_PWM_PHASES         10
 
 /* ---- 历史环形缓冲 ---- */
 #define APP_HISTORY_CAP             64

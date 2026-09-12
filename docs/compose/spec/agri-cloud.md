@@ -1,16 +1,16 @@
 ---
 feature: agri-cloud
-status: delivered
+status: in-progress
 updated: 2026-07-11
 branch: feat/agri-cloud
-commits: 313966a..a707ddc
+commits: 313966a..89b9e8e
 ---
 
 # 端云协同智慧农业物联网系统（面试展示版）
 
 ## Report
 
-**What was built** — 在既有 FreeRTOS+LVGL/GUI Guider 底座上补齐端云协同智慧农业业务层：滑动平均滤波、滞回闭环与声光报警、环形缓冲双用途（本地快照+断线续传）、L610 AT 状态机（显式 next_on_ok、指数退避 1s→60s、SIM/真机共用 INIT→…→ONLINE 序列）、MQTT/JSON 上报与命令 seq 去重、双端模式/执行器同步、IWDG+任务心跳。`APP_CLOUD_SIM=1` 默认无模组演示全链路。
+**What was built** — 在既有 FreeRTOS+LVGL/GUI Guider 底座上补齐端云协同智慧农业业务层：滑动平均滤波、滞回闭环与声光报警、环形缓冲双用途（本地快照+断线续传）、L610 AT 状态机（显式 next_on_ok、指数退避 1s→60s、SIM/真机共用 INIT→…→ONLINE 序列）、MQTT/JSON 上报与命令 seq 去重、双端模式/执行器同步、IWDG+任务心跳。`APP_CLOUD_SIM=1` 默认无模组演示全链路。R4 review clean。
 
 **Verification** — `cmake --preset Debug && cmake --build --preset Debug`：0 error；FLASH 552152B（52.66%），RAM 121232B/128KB（92.49%）。四轮独立 Review：R1 堆/UART RX/退避/UI 回写；R2 SIM 链坍缩、真机 INIT、阈值标签覆写；R3 OK 越态、pub 截断、ACK 计数语义；R4 **clean（无 critical/major）**。
 
@@ -103,3 +103,9 @@ commits: 313966a..a707ddc
 - 真机 L610 的 CMQTTPUB 命令串仍为简化格式，默认 `APP_CLOUD_SIM=1`；接真模组时需按模组手册补全 topic/clientId 字段。
 - ACK 无应用层“云端已确认”回执：`cmd_ack_timeout` 仅在 ACK `mqtt_publish` 失败时累加。
 - 真机上行 in-flight 期间到达的下行 ACK 会失败并计数（指标噪音）；功能靠 seq 去重保证。
+
+## Amendment（R4 后增量）
+
+- [x] A1: UI 嵌入 `lv_chart` 历史曲线（tab_2 底部，从 `history_ring_snapshot` 刷温湿度） — acceptance: 切到 control 页可见折线 (covers: S2 UI)
+- [x] A2: `APP_SENSOR_SIM=0` 可编译：DHT11 入 CMake + DWT 微秒延时 + 开漏 GPIO 初始化 — acceptance: 改宏为 0 后 Debug 构建仍 0 error (covers: S2 传感器)
+- [x] A3: 指标打磨：pub busy 不计入 offline fail；pub ERROR 计 `uplink_fail`；软 PWM 相位数 `APP_SOFT_PWM_PHASES` — acceptance: 编译通过且逻辑可从代码读出 (covers: S2)

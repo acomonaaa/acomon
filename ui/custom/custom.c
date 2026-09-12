@@ -15,6 +15,7 @@
 #include "lvgl.h"
 #include "custom.h"
 #include "system_data.h"
+#include "history_ring.h"
 #include "main.h"          /* HAL GPIO / LCD_BL 引脚宏定义 */
 
 /* 引用在 lv_port_indev.c 中创建的全局焦点组 */
@@ -71,6 +72,8 @@ static void spotify_apply_focus_style(lv_obj_t *obj);
 static void spotify_register_group_objects(lv_ui *ui);
 static void spotify_init_threshold_spinboxes(lv_ui *ui);
 static void ui_update_timer_cb(lv_timer_t *timer);
+static void history_chart_create(lv_obj_t *parent);
+static void history_chart_refresh(void);
 
 /* ========== 新的焦点管理系统 ========== */
 static void init_tab_focus(lv_ui *ui);
@@ -200,6 +203,11 @@ void custom_init(lv_ui *ui)
 
     /* 6. 用共享数据初始化阈值控件，避免界面和业务默认值脱节 */
     spotify_init_threshold_spinboxes(ui);
+
+    /* 6.5 control 页底部历史曲线（history_ring → lv_chart） */
+    if (ui->screen_tabview_1_tab_2) {
+        history_chart_create(ui->screen_tabview_1_tab_2);
+    }
 
     /* 7. 启动传感器数据刷新定时器（每 500ms 从全局字典读取并刷新屏幕） */
     lv_timer_create(ui_update_timer_cb, 500, NULL);
@@ -1148,6 +1156,64 @@ void custom_ui_process_keys(void)
     }
 }
 
+/* ==================== 历史曲线（history_ring → lv_chart） ==================== */
+#define HIST_CHART_POINTS  32
+static lv_obj_t *s_hist_chart;
+static lv_chart_series_t *s_series_temp;
+static lv_chart_series_t *s_series_humi;
+static int32_t s_chart_temp[HIST_CHART_POINTS];
+static int32_t s_chart_humi[HIST_CHART_POINTS];
+
+static void history_chart_create(lv_obj_t *parent)
+{
+    if (!parent || s_hist_chart) return;
+
+    s_hist_chart = lv_chart_create(parent);
+    lv_obj_set_pos(s_hist_chart, 8, 148);
+    lv_obj_set_size(s_hist_chart, 304, 38);
+    lv_chart_set_type(s_hist_chart, LV_CHART_TYPE_LINE);
+    lv_chart_set_point_count(s_hist_chart, HIST_CHART_POINTS);
+    lv_chart_set_range(s_hist_chart, LV_CHART_AXIS_PRIMARY_Y, 0, 100);
+    lv_obj_set_style_bg_color(s_hist_chart, lv_color_hex(SPOTIFY_BG_SURFACE), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_hist_chart, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_hist_chart, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_hist_chart, 2, LV_PART_MAIN);
+
+    s_series_temp = lv_chart_add_series(s_hist_chart, lv_color_hex(SPOTIFY_GREEN), LV_CHART_AXIS_PRIMARY_Y);
+    s_series_humi = lv_chart_add_series(s_hist_chart, lv_color_hex(0x4fc3f7), LV_CHART_AXIS_PRIMARY_Y);
+    lv_chart_set_series_ext_y_array(s_hist_chart, s_series_temp, s_chart_temp);
+    lv_chart_set_series_ext_y_array(s_hist_chart, s_series_humi, s_chart_humi);
+}
+
+static void history_chart_refresh(void)
+{
+    if (!s_hist_chart || !s_series_temp || !s_series_humi) return;
+
+    history_sample_t samples[HIST_CHART_POINTS];
+    uint32_t n = history_ring_snapshot(samples, HIST_CHART_POINTS);
+    if (n == 0) return;
+
+    /* 对齐到数组尾部（最新在右） */
+    uint32_t pad = HIST_CHART_POINTS - n;
+    for (uint32_t i = 0; i < HIST_CHART_POINTS; i++) {
+        if (i < pad) {
+            s_chart_temp[i] = 0;
+            s_chart_humi[i] = 0;
+        } else {
+            const history_sample_t *s = &samples[i - pad];
+            float t = s->temp;
+            float h = s->humi;
+            if (t < 0) t = 0;
+            if (t > 100) t = 100;
+            if (h < 0) h = 0;
+            if (h > 100) h = 100;
+            s_chart_temp[i] = (int32_t)t;
+            s_chart_humi[i] = (int32_t)h;
+        }
+    }
+    lv_chart_refresh(s_hist_chart);
+}
+
 /* ==================== LVGL 数据刷新定时器 ==================== */
 
 /**
@@ -1167,9 +1233,14 @@ static void ui_update_data(void);  /* 数据刷新函数声明 */
 static void ui_update_timer_cb(lv_timer_t *timer)
 {
     (void)timer;
-
-    /* 实际的数据刷新逻辑 */
     ui_update_data();
+    /* 每 2s 刷一次曲线，避免 500ms 全量 refresh 过重 */
+    {
+        static uint32_t tick;
+        if ((++tick % 4) == 0) {
+            history_chart_refresh();
+        }
+    }
 }
 
 /**
